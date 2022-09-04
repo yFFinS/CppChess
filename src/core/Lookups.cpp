@@ -11,7 +11,7 @@
 #include <complex>
 
 #include "Common.h"
-#include "ScopedInitProfiler.h"
+#include "ScopedTimer.h"
 #include "Random.h"
 
 namespace chess::core

@@ -98,36 +98,39 @@ namespace chess::ai::details
 
 		{
 			TypedMove typedMoves[MAX_MOVES];
-			const auto end = GenerateLegalMoves(refs.Board, typedMoves);
+			const auto end = GenerateMoves<core::moves::Legality::PseudoLegal>(refs.Board, typedMoves);
 
 			count = (int)(end - typedMoves);
-			if (count == 0)
-			{
-				return startedInCheck ? CHECKMATE_SCORE + refs.Ply : STALEMATE_SCORE;
-			}
 
 			m_MoveSorter.Populate(typedMoves, end, scoredMoves, refs.Ply,
 					ttEntry.has_value() ? ttEntry->BestMove : Move::Empty());
 		}
 
+		int legalMoves = 0;
 		for (int moveIndex = 0; moveIndex < count; moveIndex++)
 		{
 			m_MoveSorter.SortTo(scoredMoves, count, moveIndex);
 			const auto move = scoredMoves[moveIndex];
 
+			if (!refs.Board.IsLegal(move)) // NOLINT(cppcoreguidelines-slicing)
+			{
+				continue;
+			}
+
+			legalMoves++;
 			refs.Ply++;
 			refs.Board.MakeMove(move); // NOLINT(cppcoreguidelines-slicing)
 
 			const bool isInCheck = (bool)refs.Board.checkers();
 			int lmr = 0;
 
-			if (!doPvs && moveIndex > 1 && depth >= 3 &&
+			if (!doPvs && legalMoves > 1 && depth >= 3 &&
 					!startedInCheck && !isInCheck &&
 					move.type() != core::moves::Type::Quiet &&
 					move.movedPiece().type() != core::pieces::Type::Pawn &&
 					!m_MoveSorter.IsKillerMove(move, refs.Ply - 1))
 			{
-				lmr = 1 + (moveIndex > 6 ? refs.Ply / 3 : 0);
+				lmr = 1 + (legalMoves > 6 ? refs.Ply / 3 : 0);
 				if constexpr (NodeType == Node::PV)
 				{
 					lmr = lmr * 2 / 3;
@@ -197,6 +200,11 @@ namespace chess::ai::details
 			}
 		}
 
+		if (legalMoves == 0)
+		{
+			return startedInCheck ? CHECKMATE_SCORE + refs.Ply : STALEMATE_SCORE;
+		}
+
 		m_TTable.Insert(hash::TableEntry{
 				.Hash = refs.Board.hash(),
 				.BestMove = bestMove,
@@ -235,19 +243,13 @@ namespace chess::ai::details
 			alpha = score;
 		}
 
-		static constexpr int MAX_CAPTURES = 64;
-
-		ScoredMove scoredMoves[MAX_CAPTURES];
+		ScoredMove scoredMoves[MAX_MOVES];
 
 		int count;
 		{
-			TypedMove typedMoves[MAX_CAPTURES];
-			const auto end = GenerateLegalMoves<true>(refs.Board, typedMoves);
+			TypedMove typedMoves[MAX_MOVES];
+			const auto end = GenerateMoves<core::moves::Legality::PseudoLegal, true>(refs.Board, typedMoves);
 			count = (int)(end - typedMoves);
-			if (count == 0)
-			{
-				return alpha;
-			}
 
 			m_MoveSorter.Populate(typedMoves, end, scoredMoves, refs.Ply, Move::Empty());
 		}
@@ -256,6 +258,11 @@ namespace chess::ai::details
 		{
 			m_MoveSorter.SortTo(scoredMoves, count, i);
 			const auto move = scoredMoves[i];
+
+			if (!refs.Board.IsLegal(move))
+			{
+				continue;
+			}
 
 			std::vector<Move> newPv;
 
@@ -346,7 +353,7 @@ namespace chess::ai::details
 		if (bookMoveSelector)
 		{
 			Move moves[MAX_MOVES];
-			const auto end = GenerateLegalMoves(board, moves);
+			const auto end = GenerateMoves<core::moves::Legality::Legal>(board, moves);
 			const auto bookMove = bookMoveSelector->TrySelect(board.hash(), moves, end, bookTemperature);
 			if (bookMove.IsValid())
 			{

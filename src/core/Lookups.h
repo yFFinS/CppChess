@@ -21,9 +21,6 @@ namespace chess::core::lookups
 	NODISCARD Bitboard GetPawnAttacks(Square square, pieces::Color color);
 	NODISCARD Bitboard GetKnightMoves(Square square);
 	NODISCARD Bitboard GetKingMoves(Square square);
-	NODISCARD Bitboard GetBishopMoves(Square square, Bitboard boardOccupancy);
-	NODISCARD Bitboard GetRookMoves(Square square, Bitboard boardOccupancy);
-	NODISCARD Bitboard GetQueenMoves(Square square, Bitboard boardOccupancy);
 
 	NODISCARD Bitboard GetAttackingKnights(Square square);
 	NODISCARD Bitboard GetAttackingPawns(Square square, pieces::Color color);

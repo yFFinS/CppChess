@@ -114,6 +114,9 @@ namespace chess::core
 			return Square(square);
 		}
 
+		NODISCARD Bitboard GetAttackedBy(Square square) const;
+		NODISCARD bool IsAttacked(Square square) const;
+
 		pieces::Piece RemovePiece(Square square);
 
 		template<bool TryRemove = true>
@@ -180,6 +183,7 @@ namespace chess::core
 			return endGameWeights() >= 0;
 		}
 
+		NODISCARD bool IsLegal(moves::Move move) const;
 	private:
 		void ChangeSidesInternal();
 		void SetCastlingRightsInternal(pieces::CastlingRights cr);

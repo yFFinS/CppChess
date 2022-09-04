@@ -244,6 +244,9 @@ void Thread(ChessState* state)
 
 int main()
 {
+	HealthCheck();
+	return 0;
+
 	auto* state = CreateState();
 	state->LoadBook("../database/book.bin");
 	using namespace std::chrono_literals;
@@ -252,10 +255,6 @@ int main()
 	for (int i = 0; i < 10; i++)
 	{
 		Thread(state);
-		chess::core::moves::Move moves[256];
-		const auto end = chess::core::moves::GenerateLegalMoves(state->board(), moves);
-		auto& board = const_cast<chess::core::Board&>(state->board());
-		board.MakeMove(*(end - 1));
 //		std::thread thread(lambda);
 //		thread.detach();
 //		std::this_thread::sleep_for(2s);

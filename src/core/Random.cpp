@@ -7,11 +7,9 @@
 
 namespace chess::core
 {
-	uint64_t RandomUint64()
+	uint64_t RandomUInt64()
 	{
-		static std::random_device s_Device;
-		static std::mt19937_64 s_Generator(s_Device());
-		static std::uniform_int_distribution<uint64_t> s_Distribution;
-		return s_Distribution(s_Generator);
+		static RandomGenerator s_Gen;
+		return s_Gen.RandomUInt64();
 	}
 }

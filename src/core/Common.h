@@ -109,6 +109,12 @@ namespace chess::core
 			return m_Value;
 		}
 
+		NODISCARD constexpr std::pair<int, int> xy() const
+		{
+			const auto [y, x] = std::div(m_Value, BOARD_SIZE);
+			return { x, y };
+		}
+
 		NODISCARD constexpr Square OffsetBy(const int dx, const int dy) const
 		{
 			return Square(file() + dx, rank() + dy);
@@ -150,6 +156,13 @@ namespace chess::core
 		NODISCARD constexpr explicit operator bool() const
 		{
 			return m_Value;
+		}
+
+		NODISCARD int PopFirstSetBit()
+		{
+			const auto index = BitScanForward();
+			ResetAt(index);
+			return index;
 		}
 
 		NODISCARD constexpr Bitboard operator>>(const int shift) const

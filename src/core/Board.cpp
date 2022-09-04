@@ -5,32 +5,12 @@
 #include <cstring>
 #include "Lookups.h"
 #include "Board.h"
+#include "Magic.h"
 
 namespace chess::core
 {
 	namespace
 	{
-		Bitboard CalculateCheckersBitboard(const Board& board)
-		{
-			Bitboard checkersBB;
-
-			const auto occupancyBB = board.occupancy();
-			const auto kingSquare = board.GetKingSquare(board.colorToPlay());
-			const auto them = pieces::OppositeColor(board.colorToPlay());
-
-			checkersBB |= lookups::GetAttackingKnights(kingSquare) & board.GetPieces(pieces::Type::Knight);
-			checkersBB |= lookups::GetAttackingPawns(kingSquare, them) & board.GetPieces(pieces::Type::Pawn);
-
-			const auto bishopKingMoves = lookups::GetBishopMoves(kingSquare, occupancyBB);
-			const auto rookKingMoves = lookups::GetRookMoves(kingSquare, occupancyBB);
-
-			checkersBB |= board.GetPieces(pieces::Type::Bishop) & bishopKingMoves;
-			checkersBB |= board.GetPieces(pieces::Type::Rook) & rookKingMoves;
-			checkersBB |= board.GetPieces(pieces::Type::Queen) & (rookKingMoves | bishopKingMoves);
-
-			return checkersBB & board.GetPieces(them);
-		}
-
 		constexpr std::pair<Bitboard, Bitboard> CalculateAttackedBitboards(const Board& board)
 		{
 			Bitboard whiteAttackedBB, blackAttackedBB;
@@ -57,13 +37,13 @@ namespace chess::core
 					attackedBB = lookups::GetKnightMoves(*it);
 					break;
 				case pieces::Type::Bishop:
-					attackedBB = lookups::GetBishopMoves(*it, occupancyBB);
+					attackedBB = lookups::GetSliderMoves<pieces::Type::Bishop>(*it, occupancyBB);
 					break;
 				case pieces::Type::Rook:
-					attackedBB = lookups::GetRookMoves(*it, occupancyBB);
+					attackedBB = lookups::GetSliderMoves<pieces::Type::Rook>(*it, occupancyBB);
 					break;
 				case pieces::Type::Queen:
-					attackedBB = lookups::GetQueenMoves(*it, occupancyBB);
+					attackedBB = lookups::GetSliderMoves<pieces::Type::Queen>(*it, occupancyBB);
 					break;
 				case pieces::Type::King:
 					attackedBB = lookups::GetKingMoves(*it);
@@ -531,14 +511,14 @@ namespace chess::core
 
 	void Board::UpdateBitboards()
 	{
-		const auto attackedBBs = CalculateAttackedBitboards(*this);
-		m_AttackedBBs[(int)pieces::Color::Black] = attackedBBs.first;
-		m_AttackedBBs[(int)pieces::Color::White] = attackedBBs.second;
+//		const auto attackedBBs = CalculateAttackedBitboards(*this);
+//		m_AttackedBBs[(int)pieces::Color::Black] = attackedBBs.first;
+//		m_AttackedBBs[(int)pieces::Color::White] = attackedBBs.second;
+//
+//		m_PinsInfos[(int)pieces::Color::Black] = CalculatePinsInfo(*this, pieces::Color::Black);
+//		m_PinsInfos[(int)pieces::Color::White] = CalculatePinsInfo(*this, pieces::Color::White);
 
-		m_PinsInfos[(int)pieces::Color::Black] = CalculatePinsInfo(*this, pieces::Color::Black);
-		m_PinsInfos[(int)pieces::Color::White] = CalculatePinsInfo(*this, pieces::Color::White);
-
-		m_CheckersBB = CalculateCheckersBitboard(*this);
+		m_CheckersBB = GetAttackedBy(GetKingSquare(colorToPlay()));
 	}
 
 	Board Board::CloneWithoutHistory() const
@@ -564,6 +544,80 @@ namespace chess::core
 						GetPieceCount(pieces::Color::Black, pieces::Type::Knight);
 
 		m_EndGameWeight = -70 * queensCount + (2 - rooksCount) * 30 + (4 - minorPiecesCount) * 20;
+	}
+
+	Bitboard Board::GetAttackedBy(const Square square) const
+	{
+		Bitboard attackedByBB;
+
+		const auto occupancyBB = occupancy();
+		const auto them = pieces::OppositeColor(colorToPlay());
+
+		attackedByBB |= lookups::GetAttackingKnights(square) & GetPieces(pieces::Type::Knight);
+		attackedByBB |= lookups::GetAttackingPawns(square, them) & GetPieces(pieces::Type::Pawn);
+
+		const auto bishopMoves = lookups::GetSliderMoves<pieces::Type::Bishop>(square, occupancyBB);
+		const auto rookMoves = lookups::GetSliderMoves<pieces::Type::Rook>(square, occupancyBB);
+
+		attackedByBB |= GetPieces(pieces::Type::Bishop) & bishopMoves;
+		attackedByBB |= GetPieces(pieces::Type::Rook) & rookMoves;
+		attackedByBB |= GetPieces(pieces::Type::Queen) & (rookMoves | bishopMoves);
+
+		return attackedByBB & GetPieces(them);
+	}
+
+	bool Board::IsAttacked(const Square square) const
+	{
+		const auto occupancyBB = occupancy();
+		const pieces::Color them = pieces::OppositeColor(colorToPlay());
+		const auto themBB = GetPieces(them);
+
+		if (lookups::GetAttackingKnights(square) & GetPieces(pieces::Type::Knight) & themBB)
+		{
+			return true;
+		}
+		if (lookups::GetAttackingPawns(square, them) & GetPieces(pieces::Type::Pawn))
+		{
+			return true;
+		}
+
+		const auto queensBB = GetPieces(pieces::Type::Queen);
+		if (lookups::GetSliderMoves<pieces::Type::Bishop>(square, occupancyBB) &
+				(GetPieces(pieces::Type::Bishop) | queensBB) & themBB)
+		{
+			return true;
+		}
+
+		if (lookups::GetSliderMoves<pieces::Type::Rook>(square, occupancyBB) &
+				(GetPieces(pieces::Type::Rook) | queensBB) & themBB)
+		{
+			return true;
+		}
+
+		return false;
+	}
+
+	bool Board::IsLegal(const moves::Move move) const
+	{
+		auto* nonConstThis = const_cast<Board*>(this);
+
+		assert(move.IsValid());
+		assert(move.type() != moves::Type::LongCastle && move.type() != moves::Type::ShortCastle);
+
+		const auto undoMovedPiece = nonConstThis->RemovePiece(move.start());
+		const auto undoCaptureSquare =
+				move.type() == moves::Type::EnPassant ? moves::GetEnPassantCapturedPawnSquare(move) : move.end();
+		const auto undoCapturedPiece = nonConstThis->RemovePiece(undoCaptureSquare);
+
+		nonConstThis->SetPiece<false>(move.end(), undoMovedPiece);
+
+		const bool isLegal = !IsAttacked(GetKingSquare(colorToPlay()));
+
+		nonConstThis->SetPiece<false>(move.start(), undoMovedPiece);
+		nonConstThis->RemovePiece(move.end());
+		nonConstThis->SetPiece<false>(undoCaptureSquare, undoCapturedPiece);
+
+		return isLegal;
 	}
 
 	template void Board::SetPiece<false>(chess::core::Square, pieces::Piece);

@@ -5,6 +5,7 @@
 #include "MoveGeneration.h"
 #include "../Board.h"
 #include "Move.h"
+#include "../Magic.h"
 
 namespace chess::core::moves
 {
@@ -157,7 +158,7 @@ namespace chess::core::moves
 			}
 
 			const auto occupancyBB = board.occupancy();
-			const auto movesBB = lookups::GetBishopMoves(bishopSquare, occupancyBB);
+			const auto movesBB = lookups::GetSliderMoves<pieces::Type::Bishop>(bishopSquare, occupancyBB);
 
 			Square moves[14];
 
@@ -200,7 +201,7 @@ namespace chess::core::moves
 			}
 
 			const auto occupancyBB = board.occupancy();
-			const auto movesBB = lookups::GetRookMoves(rookSquare, occupancyBB);
+			const auto movesBB = lookups::GetSliderMoves<pieces::Type::Rook>(rookSquare, occupancyBB);
 
 			Square moves[14];
 
@@ -246,7 +247,7 @@ namespace chess::core::moves
 			}
 
 			const auto occupancyBB = board.occupancy();
-			const auto movesBB = lookups::GetQueenMoves(queenSquare, occupancyBB);
+			const auto movesBB = lookups::GetSliderMoves<pieces::Type::Queen>(queenSquare, occupancyBB);
 
 			Square moves[28];
 
@@ -414,11 +415,11 @@ namespace chess::core::moves
 			   lookups::GetInBetween(checkerSquare, kingSquare) : Bitboard();
 	}
 
-	template<bool CapturesOnly>
-	TypedMove* GenerateLegalMoves(const Board& board, TypedMove* output)
+	template<Legality Legality, bool CapturesOnly>
+	TypedMove* GenerateMoves(const Board& board, TypedMove* output)
 	{
 		Move moves[MAX_MOVES];
-		const auto end = GenerateLegalMoves<CapturesOnly>(board, moves);
+		const auto end = GenerateMoves<Legality, CapturesOnly>(board, moves);
 		for (auto it = moves; it != end; it++)
 		{
 			const auto move = GetTypedMove(board, *it);
@@ -429,10 +430,13 @@ namespace chess::core::moves
 		return output;
 	}
 
-	template<bool CapturesOnly>
-	Move* GenerateLegalMoves(const Board& board, Move* output)
+	template<Legality Legality, bool CapturesOnly>
+	Move* GenerateMoves(const Board& board, Move* output)
 	{
+		static_assert(Legality == Legality::PseudoLegal || Legality == Legality::Legal);
 		assert(output);
+
+		auto outputEndCopy = output;
 
 		const auto checkersBB = board.checkers();
 		const auto checkersCount = checkersBB.PopCount();
@@ -442,7 +446,7 @@ namespace chess::core::moves
 		if (checkersCount > 1)
 		{
 			const auto kingSquare = board.GetKingSquare(us);
-			return GenerateKingMoves < false > (board, kingSquare, output);
+			return GenerateKingMoves<false>(board, kingSquare, output);
 		}
 
 		Bitboard pushMask{ ~0ULL };
@@ -487,21 +491,41 @@ namespace chess::core::moves
 				output = GeneratePawnMoves<CapturesOnly>(board, *it, output, pawnPushMask, captureMask);
 				break;
 			case pieces::Type::Knight:
-				output = GenerateKnightMoves < CapturesOnly > (board, *it, output, pushMask, captureMask);
+				output = GenerateKnightMoves<CapturesOnly>(board, *it, output, pushMask, captureMask);
 				break;
 			case pieces::Type::Bishop:
-				output = GenerateBishopMoves < CapturesOnly > (board, *it, output, pushMask, captureMask);
+				output = GenerateBishopMoves<CapturesOnly>(board, *it, output, pushMask, captureMask);
 				break;
 			case pieces::Type::Rook:
-				output = GenerateRookMoves < CapturesOnly > (board, *it, output, pushMask, captureMask);
+				output = GenerateRookMoves<CapturesOnly>(board, *it, output, pushMask, captureMask);
 				break;
 			case pieces::Type::Queen:
 				output = GenerateQueenMoves<CapturesOnly>(board, *it, output, pushMask, captureMask);
 				break;
 			case pieces::Type::King:
-				output = GenerateKingMoves < CapturesOnly > (board, *it, output);
+				output = GenerateKingMoves<CapturesOnly>(board, *it, output);
 				break;
 			}
+		}
+
+		if constexpr (Legality == Legality::Legal)
+		{
+			Move legalMoves[MAX_MOVES];
+			auto legalMovesEnd = legalMoves;
+			for (auto it = outputEndCopy; it != output; it++)
+			{
+				if (board.IsLegal(*it))
+				{
+					*legalMovesEnd++ = *it;
+				}
+			}
+
+			for (auto it = legalMoves; it != legalMovesEnd; it++)
+			{
+				*outputEndCopy++ = *it;
+			}
+
+			return outputEndCopy;
 		}
 
 		return output;
@@ -513,9 +537,13 @@ namespace chess::core::moves
 		return { move, board.GetPiece(move.start()), board.GetPiece(capturedSquare) };
 	}
 
-	template Move* GenerateLegalMoves<false>(const Board&, Move*);
-	template Move* GenerateLegalMoves<true>(const Board&, Move*);
-	template TypedMove* GenerateLegalMoves<false>(const Board&, TypedMove*);
-	template TypedMove* GenerateLegalMoves<true>(const Board&, TypedMove*);
+	template Move* GenerateMoves<Legality::PseudoLegal, false>(const Board&, Move*);
+	template Move* GenerateMoves<Legality::Legal, false>(const Board&, Move*);
+	template Move* GenerateMoves<Legality::PseudoLegal, true>(const Board&, Move*);
+	template Move* GenerateMoves<Legality::Legal, true>(const Board&, Move*);
+	template TypedMove* GenerateMoves<Legality::PseudoLegal, false>(const Board& board, TypedMove* output);
+	template TypedMove* GenerateMoves<Legality::PseudoLegal, true>(const Board& board, TypedMove* output);
+	template TypedMove* GenerateMoves<Legality::Legal, false>(const Board& board, TypedMove* output);
+	template TypedMove* GenerateMoves<Legality::Legal, true>(const Board& board, TypedMove* output);
 }
 

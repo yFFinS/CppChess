@@ -14,7 +14,7 @@ namespace chess::core::misc
 	size_t Perft(Board& board, const int depth, std::vector<std::pair<moves::Move, size_t>>* divide)
 	{
 		moves::Move moves[moves::MAX_MOVES];
-		const auto end = moves::GenerateLegalMoves(board, moves);
+		const auto end = moves::GenerateMoves<moves::Legality::Legal>(board, moves);
 		const auto nodes = end - moves;
 
 		if (depth == 1)

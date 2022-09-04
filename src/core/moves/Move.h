@@ -26,6 +26,12 @@ namespace chess::core::moves
 		QueenPC = 13,
 	};
 
+	enum struct Legality
+	{
+		Legal,
+		PseudoLegal
+	};
+
 	struct Move
 	{
 	public:
