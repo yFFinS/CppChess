@@ -56,7 +56,7 @@ namespace chess::ai::details
 
 		if (depth <= 0)
 		{
-			return Quiescence(alpha, beta, pv, refs);
+			return Quiescence(depth, alpha, beta, pv, refs);
 		}
 
 		refs.Nodes++;
@@ -73,7 +73,7 @@ namespace chess::ai::details
 		if (refs.Ply > 0)
 		{
 			ttEntry = m_TTable.Probe(refs.Board.hash());
-			if (ttEntry.has_value())
+			if (ttEntry.has_value() && !ttEntry->FromQuiescence)
 			{
 				const auto hitType = ttEntry->Apply(depth, alpha, beta);
 				if (hitType != hash::EntryType::None)
@@ -111,11 +111,6 @@ namespace chess::ai::details
 		{
 			m_MoveSorter.SortTo(scoredMoves, count, moveIndex);
 			const auto move = scoredMoves[moveIndex];
-
-			if (!refs.Board.IsLegal(move)) // NOLINT(cppcoreguidelines-slicing)
-			{
-				continue;
-			}
 
 			legalMoves++;
 			refs.Ply++;
@@ -210,13 +205,14 @@ namespace chess::ai::details
 				.BestMove = bestMove,
 				.Type = entryType,
 				.Depth = newDepth,
-				.Value = alpha
+				.Value = alpha,
+				.FromQuiescence = false
 		});
 
 		return alpha;
 	}
 
-	int Search::Quiescence(int alpha, int beta, std::vector<core::moves::Move>& pv, SearchRefs& refs)
+	int Search::Quiescence(const int depth, int alpha, int beta, std::vector<core::moves::Move>& pv, SearchRefs& refs)
 	{
 		if (ShouldStop())
 		{
@@ -226,21 +222,45 @@ namespace chess::ai::details
 		refs.Nodes++;
 		refs.SelDepth = std::max(refs.SelDepth, refs.Ply);
 
-		auto score = eval::EvaluateBoard(refs.Board);
+		const auto startAlpha = alpha;
+
+		int standPat = std::numeric_limits<int>::min();
+		const bool startedInCheck = (bool)refs.Board.checkers();
+
+		Move ttMove;
+
+		if (!startedInCheck)
+		{
+			const auto ttEntry = m_TTable.Probe(refs.Board.hash());
+			if (ttEntry.has_value())
+			{
+				ttMove = ttEntry->BestMove;
+				const auto hitType = ttEntry->Apply(depth, alpha, beta);
+				if (hitType != hash::EntryType::None)
+				{
+					refs.TTableHits++;
+					if (hitType == hash::EntryType::Exact)
+					{
+						return ApplyCheckmateCorrection(ttEntry->Value, refs.Ply);
+					}
+					if (alpha >= beta)
+					{
+						return alpha;
+					}
+				}
+			}
+
+			standPat = eval::EvaluateBoard(refs.Board);
+			alpha = std::max(alpha, standPat);
+			if (alpha >= beta)
+			{
+				return standPat;
+			}
+		}
 
 		if (refs.Ply >= MAX_PLY)
 		{
-			return score;
-		}
-
-		if (score > beta)
-		{
-			return beta;
-		}
-
-		if (score > alpha)
-		{
-			alpha = score;
+			return standPat;
 		}
 
 		ScoredMove scoredMoves[MAX_MOVES];
@@ -251,13 +271,19 @@ namespace chess::ai::details
 			const auto end = GenerateMoves<core::moves::Legality::PseudoLegal, true>(refs.Board, typedMoves);
 			count = (int)(end - typedMoves);
 
-			m_MoveSorter.Populate(typedMoves, end, scoredMoves, refs.Ply, Move::Empty());
+			if (count == 0)
+			{
+				return startedInCheck ? CHECKMATE_SCORE + refs.Ply : STALEMATE_SCORE;
+			}
+
+			m_MoveSorter.Populate(typedMoves, end, scoredMoves, refs.Ply, ttMove);
 		}
 
 		for (int i = 0; i < count; i++)
 		{
 			m_MoveSorter.SortTo(scoredMoves, count, i);
-			const auto move = scoredMoves[i];
+			const auto scoredMove = scoredMoves[i];
+			const auto move = static_cast<Move>(scoredMove);
 
 			if (!refs.Board.IsLegal(move))
 			{
@@ -267,16 +293,16 @@ namespace chess::ai::details
 			std::vector<Move> newPv;
 
 			refs.Ply++;
-			refs.Board.MakeMove(move); // NOLINT(cppcoreguidelines-slicing)
+			refs.Board.MakeMove(move);
 
-			score = -Quiescence(-beta, -alpha, newPv, refs);
+			const auto score = -Quiescence(depth - 1, -beta, -alpha, newPv, refs);
 
 			refs.Board.UndoMove();
 			refs.Ply--;
 
 			if (score >= beta)
 			{
-				return beta;
+				break;
 			}
 
 			if (score > alpha)
@@ -288,6 +314,28 @@ namespace chess::ai::details
 
 				alpha = score;
 			}
+		}
+
+		if (!startedInCheck)
+		{
+			auto entryType = hash::EntryType::Exact;
+			if (alpha <= startAlpha)
+			{
+				entryType = hash::EntryType::Alpha;
+			}
+			else if (alpha >= beta)
+			{
+				entryType = hash::EntryType::Beta;
+			}
+
+			m_TTable.Insert(hash::TableEntry
+					{
+							.Hash = refs.Board.hash(),
+							.BestMove = pv[0],
+							.Type = entryType,
+							.Depth = depth,
+							.Value = alpha,
+							.FromQuiescence = true });
 		}
 
 		return alpha;
@@ -344,6 +392,7 @@ namespace chess::ai::details
 			const double maxTime, const int maxDepth, const int maxWorkers, const double bookTemperature,
 			const std::function<void(SearchResult)>* depthSearchedHook)
 	{
+		m_TTable.Reset();
 		m_StopRequested = false;
 		m_StartTime = std::chrono::high_resolution_clock::now();
 		// Preparations count towards search time

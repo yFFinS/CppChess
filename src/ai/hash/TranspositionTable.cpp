@@ -9,10 +9,7 @@ namespace chess::ai::hash
 	TranspositionTable::TranspositionTable(int maxSize, int bucketSize)
 			:m_MaxSize(maxSize), m_BucketSize(bucketSize)
 	{
-		for (auto i = 0; i < maxSize; i++)
-		{
-			m_Data.emplace_back();
-		}
+		Reset();
 	}
 
 	void TranspositionTable::Insert(const TableEntry& entry)
@@ -39,8 +36,6 @@ namespace chess::ai::hash
 
 	std::optional<TableEntry> TranspositionTable::Probe(const uint64_t hash)
 	{
-		std::scoped_lock lock(m_Mutex);
-
 		const auto& bucket = GetBucket(hash);
 		auto it = std::find_if(bucket.begin(), bucket.end(),
 				[hash](const TableEntry& entry)
@@ -61,6 +56,15 @@ namespace chess::ai::hash
 	{
 		const int index = (int)(hash % m_MaxSize);
 		return m_Data[index];
+	}
+
+	void TranspositionTable::Reset()
+	{
+		m_Data.clear();
+		for (auto i = 0; i < m_MaxSize; i++)
+		{
+			m_Data.emplace_back();
+		}
 	}
 
 }

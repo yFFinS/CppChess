@@ -50,7 +50,7 @@ namespace chess::ai::details
 	private:
 		template<Node NodeType>
 		int AlphaBeta(int depth, int alpha, int beta, std::vector<core::moves::Move>& pv, SearchRefs& refs);
-		int Quiescence(int alpha, int beta, std::vector<core::moves::Move>& pv, SearchRefs& refs);
+		int Quiescence(int depth, int alpha, int beta, std::vector<core::moves::Move>& pv, SearchRefs& refs);
 
 		NODISCARD bool ShouldStop() const;
 

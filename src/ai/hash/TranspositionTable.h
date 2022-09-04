@@ -25,6 +25,7 @@ namespace chess::ai::hash
 		EntryType Type{};
 		int Depth{};
 		int Value{};
+		bool FromQuiescence{};
 
 		constexpr EntryType Apply(const int depth, int& alpha, int& beta) const
 		{
@@ -67,6 +68,7 @@ namespace chess::ai::hash
 		void Insert(const TableEntry& entry);
 		NODISCARD std::optional<TableEntry> Probe(uint64_t hash);
 
+		void Reset();
 	private:
 		NODISCARD std::vector<TableEntry>& GetBucket(uint64_t hash);
 		NODISCARD const std::vector<TableEntry>& GetBucket(uint64_t hash) const;

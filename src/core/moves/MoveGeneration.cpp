@@ -466,7 +466,7 @@ namespace chess::core::moves
 
 		Bitboard pawnPushMask;
 
-		const auto shiftLeft = [](const Bitboard value, const int shift)
+		static constexpr auto shiftLeft = [](const Bitboard value, const int shift)
 		{
 			return shift >= 0 ? value << shift : value >> -shift;
 		};
@@ -508,25 +508,25 @@ namespace chess::core::moves
 			}
 		}
 
-		if constexpr (Legality == Legality::Legal)
-		{
-			Move legalMoves[MAX_MOVES];
-			auto legalMovesEnd = legalMoves;
-			for (auto it = outputEndCopy; it != output; it++)
-			{
-				if (board.IsLegal(*it))
-				{
-					*legalMovesEnd++ = *it;
-				}
-			}
-
-			for (auto it = legalMoves; it != legalMovesEnd; it++)
-			{
-				*outputEndCopy++ = *it;
-			}
-
-			return outputEndCopy;
-		}
+//		if constexpr (Legality == Legality::Legal)
+//		{
+//			Move legalMoves[MAX_MOVES];
+//			auto legalMovesEnd = legalMoves;
+//			for (auto it = outputEndCopy; it != output; it++)
+//			{
+//				if (board.IsLegal(*it))
+//				{
+//					*legalMovesEnd++ = *it;
+//				}
+//			}
+//
+//			for (auto it = legalMoves; it != legalMovesEnd; it++)
+//			{
+//				*outputEndCopy++ = *it;
+//			}
+//
+//			return outputEndCopy;
+//		}
 
 		return output;
 	}

@@ -511,12 +511,12 @@ namespace chess::core
 
 	void Board::UpdateBitboards()
 	{
-//		const auto attackedBBs = CalculateAttackedBitboards(*this);
-//		m_AttackedBBs[(int)pieces::Color::Black] = attackedBBs.first;
-//		m_AttackedBBs[(int)pieces::Color::White] = attackedBBs.second;
-//
-//		m_PinsInfos[(int)pieces::Color::Black] = CalculatePinsInfo(*this, pieces::Color::Black);
-//		m_PinsInfos[(int)pieces::Color::White] = CalculatePinsInfo(*this, pieces::Color::White);
+		const auto attackedBBs = CalculateAttackedBitboards(*this);
+		m_AttackedBBs[(int)pieces::Color::Black] = attackedBBs.first;
+		m_AttackedBBs[(int)pieces::Color::White] = attackedBBs.second;
+
+		m_PinsInfos[(int)pieces::Color::Black] = CalculatePinsInfo(*this, pieces::Color::Black);
+		m_PinsInfos[(int)pieces::Color::White] = CalculatePinsInfo(*this, pieces::Color::White);
 
 		m_CheckersBB = GetAttackedBy(GetKingSquare(colorToPlay()));
 	}
