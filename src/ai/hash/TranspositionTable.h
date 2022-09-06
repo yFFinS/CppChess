@@ -63,15 +63,13 @@ namespace chess::ai::hash
 	class TranspositionTable
 	{
 	public:
-		TranspositionTable(int maxSize, int bucketSize);
-
 		void Insert(const TableEntry& entry);
-		NODISCARD std::optional<TableEntry> Probe(uint64_t hash);
+		NODISCARD __attribute__((no_address_safety_analysis)) std::optional<TableEntry> Probe(uint64_t hash);
 
-		void Reset();
+		void Reset(int maxSize, int bucketSize);
 	private:
-		NODISCARD std::vector<TableEntry>& GetBucket(uint64_t hash);
-		NODISCARD const std::vector<TableEntry>& GetBucket(uint64_t hash) const;
+		NODISCARD std::vector<TableEntry>* GetBucket(uint64_t hash);
+		NODISCARD const std::vector<TableEntry>* GetBucket(uint64_t hash) const;
 
 		std::vector<std::vector<TableEntry>> m_Data;
 

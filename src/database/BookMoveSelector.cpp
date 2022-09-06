@@ -103,14 +103,6 @@ namespace chess::database
 			count++;
 		}
 
-		for (auto& pair : m_Entries)
-		{
-			std::sort(pair.second.begin(), pair.second.end(), [](const Entry& lhs, const Entry& rhs)
-			{
-				return lhs.Weight > rhs.Weight;
-			});
-		}
-
 		std::cout << "Loaded " << count << " moves.\n";
 	}
 

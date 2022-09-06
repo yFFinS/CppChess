@@ -12,6 +12,8 @@
 #include "MoveSorter.h"
 #include "Defs.h"
 #include "../database/BookMoveSelector.h"
+#include "Facade.h"
+#include "../core/moves/Move.h"
 
 namespace chess::ai::details
 {
@@ -22,43 +24,27 @@ namespace chess::ai::details
 		PV, NonPV
 	};
 
-	struct SearchRefs
-	{
-		core::Board Board;
-		int Ply{};
-		int SelDepth{};
-		size_t Nodes{};
-		size_t TTableHits{};
-		int Alpha = std::numeric_limits<int>::min() + 1;
-		int Beta = std::numeric_limits<int>::max() - 1;
-	};
+	using SearchHook = std::function<void(int, const core::moves::Move*, int)>;
 
 	class Search
 	{
 	public:
-		Search(int tableSize, int tableBucketSize);
+		explicit Search(database::BookMoveSelector* bookMoveSelector = nullptr)
+		{
+			m_BookMoveSelectorPtr = bookMoveSelector;
+		}
 
-		void StartSearch(const core::Board& board, database::BookMoveSelector* bookMoveSelector,
-				double maxTime, int maxDepth = MAX_PLY, int maxWorkers = 2, double bookTemperature = 1,
-				const std::function<void(SearchResult)>* depthSearchedHook = nullptr);
+		void StartSearch(const core::Board& board, SearchParams searchParams, bool verbose = false,
+				const SearchHook* depthSearchedHook = nullptr);
 
 		void StopGrace()
 		{
-			m_StopRequested = true;
+			m_StopFlag = true;
 		}
 
 	private:
-		template<Node NodeType>
-		int AlphaBeta(int depth, int alpha, int beta, std::vector<core::moves::Move>& pv, SearchRefs& refs);
-		int Quiescence(int depth, int alpha, int beta, std::vector<core::moves::Move>& pv, SearchRefs& refs);
-
-		NODISCARD bool ShouldStop() const;
-
-		hash::TranspositionTable m_TTable;
-		MoveSorter<MAX_PLY> m_MoveSorter;
-		double m_MaxTime = 0;
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_StartTime;
-
-		std::atomic<bool> m_StopRequested = false;
+		database::BookMoveSelector* m_BookMoveSelectorPtr;
+		std::atomic_bool m_StopFlag = false;
 	};
 }

@@ -12,17 +12,17 @@ namespace chess::ai::eval
 
 	namespace
 	{
-		constexpr std::array<int, pieces::PIECES> s_PieceScores{ 100, 290, 310, 515, 900, 10000 };
-		constexpr std::array<int, BOARD_SIZE> s_PawnPassedScores{ 0, 5, 10, 20, 40, 80, 160, 0 };
-		constexpr std::array<int, pieces::PIECES> s_PiecesPinnedScores{ 10, 35, 35, 50, 150, 0 };
+		constexpr std::array<int, pieces::PIECES> PIECE_SCORES{ 100, 290, 310, 515, 900, 2000 };
+		constexpr std::array<int, BOARD_SIZE> PAWN_PASSED_SCORES{ 0, 5, 10, 20, 40, 80, 160, 0 };
+		constexpr std::array<int, pieces::PIECES> PIECE_PINNED_SCORES{ 10, 25, 25, 35, 100, 0 };
 
-		constexpr int PAWN_ISOLATED_SCORE = -30;
-		constexpr int ROOK_ON_OPEN_RANK_SCORE = 100;
-		constexpr int ROOK_ON_SEMI_OPEN_RANK_SCORE = 50;
-		constexpr int CHECK_SCORE = 20;
-		constexpr int DOUBLE_CHECK_SCORE = 200;
+		constexpr int PAWN_ISOLATED_SCORE = -20;
+		constexpr int ROOK_ON_OPEN_RANK_SCORE = 30;
+		constexpr int ROOK_ON_SEMI_OPEN_RANK_SCORE = 13;
+		constexpr int CHECK_SCORE = 10;
+		constexpr int DOUBLE_CHECK_SCORE = 50;
 		constexpr int BISHOP_PAIR_SCORE = 20;
-		constexpr int BISHOP_PAIR_END_GAME_SCORE = 100;
+		constexpr int BISHOP_PAIR_END_GAME_SCORE = 70;
 
 		auto GetPieceScoreTweak(const Board& board, const Square square, const pieces::Piece piece,
 				const auto pawnCount)
@@ -61,7 +61,7 @@ namespace chess::ai::eval
 				{
 					const int index = piece.color() == core::pieces::Color::Black ?
 									  square.rank() : BOARD_SIZE - square.rank() - 1;
-					passedTweak = s_PawnPassedScores[index];
+					passedTweak = PAWN_PASSED_SCORES[index];
 				}
 
 				tweak += board.IsEndGame() ? passedTweak * 2 : passedTweak;
@@ -102,7 +102,7 @@ namespace chess::ai::eval
 			for (int i = 0; i < count; i++)
 			{
 				const auto type = pieces[i].type();
-				auto pieceScore = s_PieceScores[(int)type];
+				auto pieceScore = PIECE_SCORES[(int)type];
 				pieceScore += GetPieceScoreTweak(board, pieceSquares[i], pieces[i], pawnCount);
 				score += pieces[i].color() == core::pieces::Color::White ? pieceScore : -pieceScore;
 			}
@@ -150,14 +150,14 @@ namespace chess::ai::eval
 			{
 				const auto piece = board.GetPiece(*it);
 				assert(pieces::IsValidPiece(piece.type()));
-				score += s_PiecesPinnedScores[(int)piece.type()];
+				score += PIECE_PINNED_SCORES[(int)piece.type()];
 			}
 
 			for (auto it = blackSquares; it != blackEnd; it++)
 			{
 				const auto piece = board.GetPiece(*it);
 				assert(pieces::IsValidPiece(piece.type()));
-				score -= s_PiecesPinnedScores[(int)piece.type()];
+				score -= PIECE_PINNED_SCORES[(int)piece.type()];
 			}
 
 			return score;
@@ -191,6 +191,7 @@ namespace chess::ai::eval
 		score += EvaluatePinnedPieces(board);
 		score += EvaluatePieceSquares(board);
 		score += EvaluatePieceCounts(board);
+
 		if (board.colorToPlay() == core::pieces::Color::Black)
 		{
 			score *= -1;

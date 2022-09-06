@@ -6,8 +6,6 @@
 
 #include <string>
 
-#include "Search.h"
-
 namespace chess::ai
 {
 	struct SearchParams
@@ -16,7 +14,7 @@ namespace chess::ai
 		int MaxWorkers{};
 		int TableSize{};
 		int TableBucketSize{};
-		int MaxDepth = details::MAX_PLY;
+		int MaxDepth{};
 		double BookTemperature = 1.0;
 	};
 

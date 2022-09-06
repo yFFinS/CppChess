@@ -9,6 +9,7 @@
 #include <array>
 #include <iomanip>
 #include <thread>
+#include <memory>
 #include "core/Misc.h"
 
 #include "core/Fen.h"
@@ -16,75 +17,72 @@
 #include "ai/Facade.h"
 
 #include "database/BookMoveSelector.h"
+#include "ai/Search.h"
 
 class ChessState
 {
 public:
-	struct SearchResult
-	{
-		uint16_t Move;
-		int Score;
-		int Depth;
-		int SelDepth;
-		uint64_t Nodes;
-	};
-
 	void LoadBook(const std::string_view path)
 	{
-		std::scoped_lock lock(m_AccessMutex, m_SearchMutex);
+		std::scoped_lock lock(m_Mutex);
 		m_BookMoveSelectorPtr = std::make_unique<chess::database::BookMoveSelector>(path);
 	}
 
-	void SetFen(const std::string_view fen)
+	chess::core::pieces::Color SetFen(const std::string_view fen)
 	{
-		std::scoped_lock lock(m_AccessMutex, m_SearchMutex);
+		std::scoped_lock lock(m_Mutex);
 		chess::core::fen::SetFen(m_Board, fen);
+		return m_Board.colorToPlay();
 	}
 
 	void WaitForUnlock()
 	{
-		std::scoped_lock lock(m_AccessMutex, m_SearchMutex);
+		std::scoped_lock lock(m_Mutex);
 	}
 
-	NODISCARD const chess::core::Board& board() const
+	NODISCARD chess::core::Board& board()
 	{
 		return m_Board;
 	}
 
 	void StopSearch()
 	{
-		std::scoped_lock lock(m_AccessMutex);
 		if (m_SearchPtr)
 		{
 			m_SearchPtr->StopGrace();
 		}
 	}
 
-	SearchResult Search(const chess::ai::SearchParams params)
+	chess::core::moves::Move Search(const chess::ai::SearchParams params, const bool verbose)
 	{
-		chess::ai::SearchResult bestResult{};
+		chess::core::moves::Move bestMove;
 
-		const std::function<void(chess::ai::SearchResult)> hook = [&bestResult](chess::ai::SearchResult result)
+		const chess::ai::details::SearchHook hook = [&bestMove](int, const chess::core::moves::Move* pv, int)
 		{
-			bestResult = std::move(result);
+			bestMove = *pv;
 		};
 
-		{
-			std::scoped_lock lock(m_AccessMutex);
-			m_SearchPtr = std::make_unique<chess::ai::details::Search>(params.TableSize, params.TableBucketSize);
-		}
-
-		std::scoped_lock lock(m_SearchMutex);
-		m_SearchPtr->StartSearch(m_Board.CloneWithoutHistory(), m_BookMoveSelectorPtr.get(),
-				params.MaxTime, params.MaxDepth, params.MaxWorkers, params.BookTemperature, &hook);
-
-		const auto result = bestResult;
-		const auto move = !result.PV.empty() ? result.PV[0] : chess::core::moves::Move::Empty();
-		return { .Move = move.value(), .Score = result.Score, .Depth = result.Depth, .SelDepth = result
-				.SelDepth, .Nodes = result.Nodes };
+		std::scoped_lock lock(m_Mutex);
+		m_SearchPtr = std::make_unique<chess::ai::details::Search>(m_BookMoveSelectorPtr.get());
+		m_SearchPtr->StartSearch(m_Board.CloneWithoutHistory(), params,
+				verbose, &hook);
+		return bestMove;
 	}
+
+	void MakeMove(const chess::core::moves::Move move)
+	{
+		std::scoped_lock lock(m_Mutex);
+		m_Board.MakeMove(move);
+	}
+
+	void UndoMove()
+	{
+		std::scoped_lock lock(m_Mutex);
+		m_Board.UndoMove();
+	}
+
 private:
-	std::mutex m_SearchMutex, m_AccessMutex;
+	std::mutex m_Mutex;
 	chess::core::Board m_Board;
 	std::unique_ptr<chess::database::BookMoveSelector> m_BookMoveSelectorPtr;
 	std::unique_ptr<chess::ai::details::Search> m_SearchPtr = nullptr;
@@ -115,14 +113,16 @@ void WaitForSearchEnd(ChessState* state)
 	state->WaitForUnlock();
 }
 
-void SetFen(ChessState* state, const char* const fen)
+int SetFen(ChessState* state, const char* const fen)
 {
-	state->SetFen(fen);
+	const auto color = state->SetFen(fen);
 
 	std::cout << "FEN=" << fen << '\n';
 	std::ios::fmtflags f(std::cout.flags());
 	std::cout << "Key=" << std::hex << state->board().hash() << '\n';
 	std::cout.flags(f);
+
+	return (int)color;
 }
 
 void StopSearch(ChessState* state)
@@ -155,11 +155,11 @@ void CheckPerft(std::string_view fen, int depth, size_t expected)
 
 void TimePerft(std::string_view fen, int depth)
 {
-	auto start_t = std::clock();
+	auto start_t = std::chrono::high_resolution_clock::now();
 	auto nodes = chess::core::misc::Perft(fen, depth);
-	auto passed_t = (double)(std::clock() - start_t) / CLOCKS_PER_SEC;
+	auto passed_t = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - start_t);
 	std::cout << fen << "  - Nodes: " << nodes << ". MNodes p/s: " <<
-			  std::fixed << std::setprecision(3) << (double)nodes / passed_t / 1000'000.0 << '\n';
+			  std::fixed << std::setprecision(3) << (double)nodes / passed_t.count() / 1000'000.0 << '\n';
 }
 
 void DividePerft(std::string_view fen, int depth)
@@ -176,18 +176,64 @@ void DividePerft(std::string_view fen, int depth)
 
 extern "C"
 {
+void MakeMove(ChessState* state, int rawMove)
+{
+	assert(state);
 
-ChessState::SearchResult Search(ChessState* state, const chess::ai::SearchParams params)
+	chess::core::moves::Move move(rawMove);
+	state->MakeMove(move);
+}
+
+void UndoMove(ChessState* state)
+{
+	assert(state);
+	state->UndoMove();
+}
+
+int GetBoardState(ChessState* state)
+{
+	static constexpr int PLAYING = 1;
+	static constexpr int CHECKMATE = 2;
+	static constexpr int NO_MOVES_STALEMATE = 3;
+	static constexpr int HALF_MOVES_STALEMATE = 4;
+	static constexpr int REPETITION_STALEMATE = 5;
+
+	assert(state);
+	if (state->board().halfMoves() >= 50)
+	{
+		return HALF_MOVES_STALEMATE;
+	}
+	if (state->board().GetMaxRepetitions() == 3)
+	{
+		return REPETITION_STALEMATE;
+	}
+
+	using namespace chess::core::moves;
+
+	Move moves[MAX_MOVES];
+	const auto end = GenerateMoves<Legality::Legal>(state->board(), moves);
+	const bool hasMoves = end != moves;
+	if (!hasMoves)
+	{
+		return state->board().checkers() ? CHECKMATE : NO_MOVES_STALEMATE;
+	}
+
+	return PLAYING;
+}
+
+int Search(ChessState* state, const chess::ai::SearchParams params, const int verbose)
 {
 	std::cout << "Starting search:\n"
-	          << "State address=" << &state << '\n'
+			  << "State address=" << &state << '\n'
 			  << "Max time=" << params.MaxTime << '\n'
 			  << "Max workers=" << params.MaxWorkers << '\n'
 			  << "Max depth=" << params.MaxDepth << '\n'
 			  << "Table size=" << params.TableSize << '\n'
 			  << "Table bucket size=" << params.TableBucketSize << '\n'
-			  << "Book temperature=" << params.BookTemperature << '\n';
-	return state->Search(params);
+			  << "Book temperature=" << params.BookTemperature << '\n'
+			  << "Verbose=" << verbose << std::endl;
+	const auto bestMove = state->Search(params, verbose);
+	return bestMove.value();
 }
 
 int HealthCheck()
@@ -237,30 +283,23 @@ int HealthCheck()
 
 void Thread(ChessState* state)
 {
-	chess::ai::SearchParams params{ .MaxTime= 3, .MaxWorkers = 6, .TableSize = 1000000, .TableBucketSize = 4 };
-	const auto res = Search(state, params);
-	std::cout << res.Nodes << ' ' << res.SelDepth << '\n';
+	chess::ai::SearchParams params{ .MaxTime = 3, .MaxWorkers = 4, .TableSize = 2'000'000, .TableBucketSize = 4 };
+	Search(state, params, true);
 }
 
 int main()
 {
-	HealthCheck();
-	return 0;
-
 	auto* state = CreateState();
-	state->LoadBook("../database/book.bin");
+	//state->LoadBook("../database/book.bin");
 	using namespace std::chrono_literals;
 	SetFen(state, chess::core::fen::START_FEN);
+//	MakeMove(state,
+//			chess::core::moves::Move(chess::core::Square(52), chess::core::Square(36), chess::core::moves::Type::DoublePawn)
+//					.value());
 
-	for (int i = 0; i < 10; i++)
-	{
-		Thread(state);
-//		std::thread thread(lambda);
-//		thread.detach();
-//		std::this_thread::sleep_for(2s);
-//		StopSearch(state);
-//		WaitForSearchEnd(state);
-	}
+	chess::ai::SearchParams params{ .MaxTime = 5, .MaxWorkers = 6, .TableSize = 256000,
+			.TableBucketSize = 4, .BookTemperature = 0.2 };
+	Search(state, params, 1);
 
 	FreeState(state);
 	return 0;

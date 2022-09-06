@@ -2,7 +2,6 @@
 // Created by matvey on 28.08.22.
 //
 
-#include <cstring>
 #include "Lookups.h"
 #include "Board.h"
 #include "Magic.h"
@@ -252,6 +251,9 @@ namespace chess::core
 
 	void Board::MakeMove(const moves::Move move)
 	{
+		const auto undoHash = hash();
+		assert(IsLegal(move));
+
 		auto movingPiece = RemovePiece(move.start());
 		assert(movingPiece.IsValid());
 
@@ -324,10 +326,17 @@ namespace chess::core
 			break;
 		}
 
-		if (move.type() == moves::Type::Capture ||
-				(moves::Type::BishopPC <= move.type() && move.type() <= moves::Type::QueenPC))
+		std::map<uint64_t, int> undoRepetitions{ m_Repetitions };
+		const int undoMaxRepetitions = m_MaxRepetitions;
+
+		if (move.IsCapture())
 		{
-			capturedPiece = RemovePiece(move.end());
+			if (move.type() != moves::Type::EnPassant)
+			{
+				capturedPiece = RemovePiece(move.end());
+			}
+			m_Repetitions.clear();
+			m_MaxRepetitions = 0;
 			m_HalfMoves = 0;
 			RecalculateEndGameWeight();
 		}
@@ -350,8 +359,20 @@ namespace chess::core
 
 		SetEpFileInternal(newEpFile);
 
-		m_MoveHistory.push_back(
-				MoveUndoInfo{
+		auto repetitionIt = m_Repetitions.find(hash());
+		int repetitionCount;
+		if (repetitionIt != m_Repetitions.end())
+		{
+			repetitionCount = ++repetitionIt->second;
+		}
+		else
+		{
+			m_Repetitions[hash()] = repetitionCount = 1;
+		}
+		m_MaxRepetitions = std::max(m_MaxRepetitions, repetitionCount);
+
+		m_MoveHistory.push_back(MoveUndoInfo
+				{
 						.Move = move,
 						.CapturedPiece = capturedPiece,
 						.EpFile = undoEpFile,
@@ -360,9 +381,13 @@ namespace chess::core
 						.CheckersBB = m_CheckersBB,
 						.Pins = undoPinsInfos,
 						.AttackedBBs = undoAttackedBBs,
+						.MaxRepetitions = undoMaxRepetitions,
+						.Repetitions = undoRepetitions,
+						.ValidHash = undoHash
 				});
 
 		UpdateBitboards();
+		assert(GetPiece(move.end()).IsValid());
 	}
 
 	void Board::UndoMove()
@@ -371,14 +396,16 @@ namespace chess::core
 
 		const auto undoInfo = m_MoveHistory.back();
 		m_MoveHistory.pop_back();
+		m_Repetitions = undoInfo.Repetitions;
+		m_MaxRepetitions = undoInfo.MaxRepetitions;
 
 		ChangeSidesInternal();
 		SetEpFileInternal(undoInfo.EpFile);
 		SetCastlingRightsInternal(undoInfo.CastlingRights);
 
 		m_CheckersBB = undoInfo.CheckersBB;
-		std::copy(undoInfo.AttackedBBs.begin(), undoInfo.AttackedBBs.end(), m_AttackedBBs.begin());
-		std::copy(undoInfo.Pins.begin(), undoInfo.Pins.end(), m_PinsInfos.begin());
+		m_AttackedBBs = undoInfo.AttackedBBs;
+		m_PinsInfos = undoInfo.Pins;
 
 		m_HalfMoves = undoInfo.HalfMoves;
 
@@ -448,6 +475,8 @@ namespace chess::core
 		}
 
 		SetPiece<false>(move.start(), movedPiece);
+		assert(GetPiece(move.start()).IsValid());
+		assert(hash() == undoInfo.ValidHash);
 	}
 
 	void Board::ChangeSidesInternal()
@@ -525,6 +554,8 @@ namespace chess::core
 	{
 		Board board{ *this };
 		board.m_MoveHistory = std::vector<MoveUndoInfo>();
+		std::map<uint64_t, int> repetitions{ m_Repetitions };
+		board.m_Repetitions = std::move(repetitions);
 		assert(&m_MoveHistory != &board.m_MoveHistory);
 		return board;
 	}
@@ -576,7 +607,7 @@ namespace chess::core
 		{
 			return true;
 		}
-		if (lookups::GetAttackingPawns(square, them) & GetPieces(pieces::Type::Pawn))
+		if (lookups::GetAttackingPawns(square, them) & GetPieces(pieces::Type::Pawn) & themBB)
 		{
 			return true;
 		}
@@ -599,15 +630,29 @@ namespace chess::core
 
 	bool Board::IsLegal(const moves::Move move) const
 	{
+		if (!move.IsValid())
+		{
+			return false;
+		}
+
 		auto* nonConstThis = const_cast<Board*>(this);
 
-		assert(move.IsValid());
-		assert(move.type() != moves::Type::LongCastle && move.type() != moves::Type::ShortCastle);
-
 		const auto undoMovedPiece = nonConstThis->RemovePiece(move.start());
+		if (!undoMovedPiece.IsValid() || undoMovedPiece.color() != colorToPlay())
+		{
+			return false;
+		}
+
 		const auto undoCaptureSquare =
 				move.type() == moves::Type::EnPassant ? moves::GetEnPassantCapturedPawnSquare(move) : move.end();
 		const auto undoCapturedPiece = nonConstThis->RemovePiece(undoCaptureSquare);
+		if (undoCapturedPiece.IsValid()
+				&& undoCapturedPiece.color() == colorToPlay()
+				&& move.type() != moves::Type::ShortCastle
+				&& move.type() != moves::Type::LongCastle)
+		{
+			return false;
+		}
 
 		nonConstThis->SetPiece<false>(move.end(), undoMovedPiece);
 
@@ -618,6 +663,11 @@ namespace chess::core
 		nonConstThis->SetPiece<false>(undoCaptureSquare, undoCapturedPiece);
 
 		return isLegal;
+	}
+
+	int Board::GetMaxRepetitions() const
+	{
+		return m_MaxRepetitions;
 	}
 
 	template void Board::SetPiece<false>(chess::core::Square, pieces::Piece);

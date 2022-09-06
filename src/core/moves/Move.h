@@ -35,20 +35,23 @@ namespace chess::core::moves
 	struct Move
 	{
 	public:
-		constexpr Move()
-				:m_Value(-1)
+		constexpr explicit Move(const int rawValue = 0)
+				:m_Value(rawValue)
 		{
 		}
 
 		constexpr Move(const Square start, const Square end, const Type type)
 				:m_Value(((int)type << 12 | (start.value() << 6) | end.value()))
 		{
-
+			if (!start.IsValid() || !end.IsValid())
+			{
+				m_Value = 0;
+			}
 		}
 
 		static constexpr Move Empty()
 		{
-			return {};
+			return Move(0);
 		}
 
 		NODISCARD constexpr bool IsCapture() const
@@ -59,7 +62,7 @@ namespace chess::core::moves
 
 		NODISCARD constexpr bool IsValid() const
 		{
-			return *this != Empty();
+			return m_Value;
 		}
 
 		NODISCARD constexpr bool operator==(const Move& rhs) const

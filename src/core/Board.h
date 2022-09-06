@@ -6,7 +6,7 @@
 
 #include <array>
 #include <vector>
-#include <iostream>
+#include <map>
 #include "hash/Zobrist.h"
 #include "eval/IncrementalPieceSquareEvaluator.h"
 #include "Lookups.h"
@@ -51,6 +51,9 @@ namespace chess::core
 
 		std::array<PinsInfo, pieces::COLORS> Pins;
 		std::array<Bitboard, pieces::COLORS> AttackedBBs;
+		int MaxRepetitions;
+		std::map<uint64_t, int> Repetitions;
+		uint64_t ValidHash;
 	};
 
 	class Board
@@ -184,6 +187,7 @@ namespace chess::core
 		}
 
 		NODISCARD bool IsLegal(moves::Move move) const;
+		NODISCARD int GetMaxRepetitions() const;
 	private:
 		void ChangeSidesInternal();
 		void SetCastlingRightsInternal(pieces::CastlingRights cr);
@@ -215,5 +219,8 @@ namespace chess::core
 		eval::IncrementalPieceSquareEvaluator m_Evaluator{};
 
 		std::vector<MoveUndoInfo> m_MoveHistory{};
+
+		std::map<uint64_t, int> m_Repetitions{};
+		int m_MaxRepetitions = 0;
 	};
 }

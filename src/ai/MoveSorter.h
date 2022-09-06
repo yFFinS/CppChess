@@ -21,7 +21,7 @@ namespace chess::ai::details
 					{ 55, 54, 53, 52, 51, 50 },
 			};
 
-	static constexpr int MVV_LVA_OFFSET = std::numeric_limits<int>::max() - 256;
+	static constexpr int MVV_LVA_OFFSET = 2'000'000;
 	static constexpr int KILLER_MOVE_OFFSET = 1'000'000;
 	static constexpr int TT_MOVE_VALUE = MVV_LVA_OFFSET + 100;
 
@@ -64,8 +64,6 @@ namespace chess::ai::details
 
 		NODISCARD bool IsKillerMove(const core::moves::TypedMove& move, const int ply)
 		{
-			std::scoped_lock lock(m_Mutex);
-
 			for (int i = 0; i < MaxKillerMovePerPly; i++)
 			{
 				if (m_KillerMoves[ply][i] == move)
@@ -90,7 +88,7 @@ namespace chess::ai::details
 				}
 			}
 
-			ScoredMove * lowestScoreMove = std::min(destination, destination + MaxKillerMovePerPly,
+			ScoredMove* lowestScoreMove = std::min(destination, destination + MaxKillerMovePerPly,
 					[](const auto& lhs, const auto& rhs)
 					{
 						return lhs->Score < rhs->Score;
